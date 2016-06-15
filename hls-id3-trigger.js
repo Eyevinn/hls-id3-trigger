@@ -31,6 +31,9 @@ function HLSID3_reset() {
   HLSID3.lastAacPTS = null;
   HLSID3.lastPTSnoAds = null;
   HLSID3.timeOffset = -1;
+  HLSID3.fragCount = 0;
+  HLSID3.downloadedFragments = {};
+  HLSID3.nextExpectedFragment = 0;
 }
 
 function _handleTick() {
@@ -39,6 +42,8 @@ function _handleTick() {
       for(var i=0; i<fragments.length; i++) {
         if(typeof HLSID3.fragments[fragments[i].url] === 'undefined') {
           // console.log('Adding to cache ' + fragments[i].url);
+          fragments[i].fno = HLSID3.fragCount++;
+          fragments[i].downloaded = false;
           HLSID3.fragments[fragments[i].url] = fragments[i];
         }
       }
@@ -46,42 +51,48 @@ function _handleTick() {
   });  
 
   for (var key in HLSID3.fragments) {
-    if (HLSID3.fragments[key].data == null) {
-      // console.log('Downloading fragment ' + HLSID3.fragments[key].url);
-      _loadAndParseFragment(HLSID3.fragments[key], function(fragment) {
-        if (HLSID3.timeOffset === -1 && HLSID3.playerStartTime !== -1) {
-          _updateTimeOffset(); 
-        }
-        else if (HLSID3.timeOffset === -1) {
-          // Use 30s as default offset
-          HLSID3.timeOffset = 30;
-        }
-        var aacPts = HLSID3.aacTrack.samples[HLSID3.aacTrack.samples.length-1].npts;
-        if (fragment.hasID3) {
-          console.log("Ad break: " + HLSID3.lastPTSnoAds + " ("+(HLSID3.lastPTSnoAds + HLSID3.timeOffset)+")");
-          // Fire "event"
-          if (!HLSID3.adStart.fired) {
-            if (HLSID3.lastPTSnoAds) {
-              HLSID3.adStart.Cb(HLSID3.lastPTSnoAds + HLSID3.timeOffset);
-            } else {
-              HLSID3.adStart.Cb(HLSID3.currentTimeFn());
-            }
-            HLSID3.adStart.fired = true;
-            HLSID3.adStop.fired = false;
-          }
-        } else {
-          console.log("AAC PTS: " + aacPts + " ("+(aacPts + HLSID3.timeOffset)+")");
-          HLSID3.lastPTSnoAds = aacPts;
-          HLSID3.adStart.fired = false;
-          if (!HLSID3.adStop.fired) {
-            if (HLSID3.lastPTSnoAds) {
-              HLSID3.adStop.Cb(HLSID3.lastPTSnoAds + HLSID3.timeOffset);
-            }
-            HLSID3.adStop.fired = true;
-          }
-        }
-      }); 
+    if (HLSID3.fragments[key].downloaded === false) {
+      // console.log('Downloading fragment ('+HLSID3.fragments[key].fno+') ' + HLSID3.fragments[key].url);
+      _downloadFragment(HLSID3.fragments[key], function(f) {
+        // console.log('Fragment ('+f.fno+') pushed to buffer');
+        HLSID3.fragments[f.url].downloaded = true;
+      });
     }
+  }
+
+  if (HLSID3.downloadedFragments[HLSID3.nextExpectedFragment]) {
+    var nextFragment = HLSID3.downloadedFragments[HLSID3.nextExpectedFragment];
+    _parseFragment(HLSID3.fragments[nextFragment.url], nextFragment.payload, function(fragment) {
+      // console.log('Fragment ('+fragment.fno+') parsed');
+      if (HLSID3.timeOffset === -1 && HLSID3.playerStartTime !== -1) {
+        _updateTimeOffset(); 
+      }
+      var aacPts = HLSID3.aacTrack.samples[HLSID3.aacTrack.samples.length-1].npts;
+      if (fragment.hasID3) {
+        console.log("Ad break: " + HLSID3.lastPTSnoAds + " ("+(HLSID3.lastPTSnoAds + HLSID3.timeOffset)+")");
+        // Fire "event"
+        if (!HLSID3.adStart.fired) {
+          if (HLSID3.lastPTSnoAds) {
+            HLSID3.adStart.Cb(HLSID3.lastPTSnoAds + HLSID3.timeOffset);
+          } else {
+            HLSID3.adStart.Cb(HLSID3.currentTimeFn());
+          }
+          HLSID3.adStart.fired = true;
+          HLSID3.adStop.fired = false;
+        }
+      } else {
+        console.log("("+fragment.fno+") AAC PTS: " + aacPts + " ("+(aacPts + HLSID3.timeOffset)+")");
+        HLSID3.lastPTSnoAds = aacPts;
+        HLSID3.adStart.fired = false;
+        if (!HLSID3.adStop.fired) {
+          if (HLSID3.lastPTSnoAds) {
+            HLSID3.adStop.Cb(HLSID3.lastPTSnoAds + HLSID3.timeOffset);
+          }
+          HLSID3.adStop.fired = true;
+        }
+      }
+      HLSID3.nextExpectedFragment++;
+    }); 
   }
 }
 
@@ -117,13 +128,19 @@ function _loadAndParseLevelPlaylist(levellisturi, parsedcb) {
   xhr.send();
 }
 
-function _loadAndParseFragment(fragment, parsedcb) {
+function _downloadFragment(fragment, downloadedcb) {
   var xhr = new XMLHttpRequest();
   xhr.responseType = 'arraybuffer';
   xhr.onloadend = function(event) {
     var xhr = event.target, status = xhr.status;
     if (status >= 200 && status < 300) {
-      _parseFragment(fragment, xhr.response, parsedcb);
+      var f = {
+        fno: fragment.fno,
+        payload: xhr.response,
+        url: fragment.url
+      };
+      HLSID3.downloadedFragments[fragment.fno] = f;
+      downloadedcb(f);
     }
   };
   xhr.open('GET', fragment.url, true);
