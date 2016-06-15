@@ -9,11 +9,18 @@ function HLSID3_attachSource(source, currentTimeFn, cbobj) {
   HLSID3.src = source;
   HLSID3.currentTimeFn = currentTimeFn;
   HLSID3.adStart = { Cb: cbobj.adStartCb, fired: false };
-  HLSID3.adStop = { Cb: cbobj.adStopCb, fired: false };
+  HLSID3.adStop = { Cb: cbobj.adStopCb, fired: true };
   HLSID3.timer = setInterval(_handleTick, 3000);
+  HLSID3.timeOffset = -1;
+  HLSID3.playerStartTime = -1;
   HLSID3_reset();
-
 }
+
+function HLSID3_setPlayerStartTime(startTime) {
+  HLSID3.playerStartTime = startTime;
+  _updateTimeOffset();
+}
+
 
 function HLSID3_reset() {
   HLSID3.id3Track = { type: 'id3', id: -1, samples: [] };
@@ -22,8 +29,8 @@ function HLSID3_reset() {
   HLSID3.fragments = {};
   HLSID3.aacOverflow = null;
   HLSID3.lastAacPTS = null;
-  HLSID3.latency = -1;
   HLSID3.lastPTSnoAds = null;
+  HLSID3.timeOffset = -1;
 }
 
 function _handleTick() {
@@ -42,29 +49,47 @@ function _handleTick() {
     if (HLSID3.fragments[key].data == null) {
       // console.log('Downloading fragment ' + HLSID3.fragments[key].url);
       _loadAndParseFragment(HLSID3.fragments[key], function(fragment) {
-        if (HLSID3.latency === -1) {
-          var firstPts = HLSID3.aacTrack.samples[0].npts;
-          HLSID3.latency = HLSID3.currentTimeFn() - firstPts;
+        if (HLSID3.timeOffset === -1 && HLSID3.playerStartTime !== -1) {
+          _updateTimeOffset(); 
+        }
+        else if (HLSID3.timeOffset === -1) {
+          // Use 30s as default offset
+          HLSID3.timeOffset = 30;
         }
         var aacPts = HLSID3.aacTrack.samples[HLSID3.aacTrack.samples.length-1].npts;
         if (fragment.hasID3) {
-          console.log("Ad break: " + HLSID3.lastPTSnoAds + " ("+(HLSID3.lastPTSnoAds + HLSID3.latency)+")");
+          console.log("Ad break: " + HLSID3.lastPTSnoAds + " ("+(HLSID3.lastPTSnoAds + HLSID3.timeOffset)+")");
           // Fire "event"
           if (!HLSID3.adStart.fired) {
             if (HLSID3.lastPTSnoAds) {
-              HLSID3.adStart.Cb(HLSID3.lastPTSnoAds + HLSID3.latency);
+              HLSID3.adStart.Cb(HLSID3.lastPTSnoAds + HLSID3.timeOffset);
             } else {
               HLSID3.adStart.Cb(HLSID3.currentTimeFn());
             }
             HLSID3.adStart.fired = true;
+            HLSID3.adStop.fired = false;
           }
         } else {
-          console.log("AAC PTS: " + aacPts + " ("+(aacPts + HLSID3.latency)+")");
+          console.log("AAC PTS: " + aacPts + " ("+(aacPts + HLSID3.timeOffset)+")");
           HLSID3.lastPTSnoAds = aacPts;
           HLSID3.adStart.fired = false;
+          if (!HLSID3.adStop.fired) {
+            if (HLSID3.lastPTSnoAds) {
+              HLSID3.adStop.Cb(HLSID3.lastPTSnoAds + HLSID3.timeOffset);
+            }
+            HLSID3.adStop.fired = true;
+          }
         }
       }); 
     }
+  }
+}
+
+function _updateTimeOffset() {
+  if (HLSID3.aacTrack.samples.length > 0 && HLSID3.playerStartTime !== -1) {
+    var firstPts = HLSID3.aacTrack.samples[0].npts;
+    HLSID3.timeOffset = HLSID3.playerStartTime - firstPts;  
+    console.log("New time offset: " + HLSID3.timeOffset);
   }
 }
 
