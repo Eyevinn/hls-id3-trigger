@@ -10,7 +10,7 @@ function HLSID3_attachSource(source, currentTimeFn, cbobj) {
   HLSID3.currentTimeFn = currentTimeFn;
   HLSID3.adStart = { Cb: cbobj.adStartCb, fired: false };
   HLSID3.adStop = { Cb: cbobj.adStopCb, fired: true };
-  HLSID3.timer = setInterval(_handleTick, 3000);
+  HLSID3.timer = setInterval(_handleTick, 1000);
   HLSID3.timeOffset = -1;
   HLSID3.playerStartTime = -1;
   HLSID3_reset();
@@ -30,7 +30,7 @@ function HLSID3_reset() {
   HLSID3.aacOverflow = null;
   HLSID3.lastAacPTS = null;
   HLSID3.lastPTSnoAds = null;
-  HLSID3.timeOffset = -1;
+  HLSID3.timeOffset = 0; // Don't need timeoffset
   HLSID3.fragCount = 0;
   HLSID3.downloadedFragments = {};
   HLSID3.nextExpectedFragment = 0;
@@ -63,7 +63,7 @@ function _handleTick() {
   if (HLSID3.downloadedFragments[HLSID3.nextExpectedFragment]) {
     var nextFragment = HLSID3.downloadedFragments[HLSID3.nextExpectedFragment];
     _parseFragment(HLSID3.fragments[nextFragment.url], nextFragment.payload, function(fragment) {
-      // console.log('Fragment ('+fragment.fno+') parsed');
+      console.log('Fragment ('+fragment.fno+') parsed (ID3?'+fragment.hasID3+'): '+fragment.url);
       if (HLSID3.timeOffset === -1 && HLSID3.playerStartTime !== -1) {
         _updateTimeOffset(); 
       }
@@ -80,6 +80,8 @@ function _handleTick() {
           HLSID3.adStart.fired = true;
           HLSID3.adStop.fired = false;
         }
+        // This fragment is an ad fragment, do not cache it
+        HLSID3.fragments[fragment.url].downloaded = false;
       } else {
         console.log("("+fragment.fno+") AAC PTS: " + aacPts + " ("+(aacPts + HLSID3.timeOffset)+")");
         HLSID3.lastPTSnoAds = aacPts;
