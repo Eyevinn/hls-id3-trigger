@@ -30,6 +30,7 @@ function HLSID3_reset() {
   HLSID3.aacOverflow = null;
   HLSID3.lastAacPTS = null;
   HLSID3.lastPTSnoAds = null;
+  HLSID3.firstPTSnoAds = null;
   HLSID3.timeOffset = 0; // Don't need timeoffset
   HLSID3.fragCount = 0;
   HLSID3.downloadedFragments = {};
@@ -79,18 +80,20 @@ function _handleTick() {
           }
           HLSID3.adStart.fired = true;
           HLSID3.adStop.fired = false;
+          HLSID3.firstPTSnoAds = null;
         }
         // This fragment is an ad fragment, do not cache it
         HLSID3.fragments[fragment.url].downloaded = false;
       } else {
-        console.log("("+fragment.fno+") AAC PTS: " + aacPts + " ("+(aacPts + HLSID3.timeOffset)+")");
+        console.log("("+fragment.fno+") ["+fragment.duration+"s] AAC PTS: " + aacPts + " ("+(aacPts + HLSID3.timeOffset)+")");
         HLSID3.lastPTSnoAds = aacPts;
         HLSID3.adStart.fired = false;
         if (!HLSID3.adStop.fired) {
-          if (HLSID3.lastPTSnoAds) {
-            HLSID3.adStop.Cb(HLSID3.lastPTSnoAds + HLSID3.timeOffset);
+          HLSID3.firstPTSnoAds = aacPts - fragment.duration;
+          if (HLSID3.firstPTSnoAds) {
+            HLSID3.adStop.Cb(HLSID3.firstPTSnoAds + HLSID3.timeOffset);
+            HLSID3.adStop.fired = true;
           }
-          HLSID3.adStop.fired = true;
         }
       }
       HLSID3.nextExpectedFragment++;
@@ -188,7 +191,7 @@ function _parseLevelPlaylist(string, parsedlevel) {
   var fragments = [];
   while((result = re.exec(string)) != null) {
     var f = {
-      duration: result[1],
+      duration: result[1].split(",")[0],
       url: result[2],
       hasID3: false
     };
