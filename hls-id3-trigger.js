@@ -103,9 +103,11 @@ function _handleTick() {
 
 function _updateTimeOffset() {
   if (HLSID3.aacTrack.samples.length > 0 && HLSID3.playerStartTime !== -1) {
+    /*
     var firstPts = HLSID3.aacTrack.samples[0].npts;
     HLSID3.timeOffset = HLSID3.playerStartTime - firstPts;  
     console.log("New time offset: " + HLSID3.timeOffset);
+    */
   }
 }
 
