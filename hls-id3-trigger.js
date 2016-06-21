@@ -9,11 +9,12 @@ function HLSID3_attachSource(source, currentTimeFn, cbobj) {
   HLSID3.src = source;
   HLSID3.currentTimeFn = currentTimeFn;
   HLSID3.adStart = { Cb: cbobj.adStartCb, fired: false };
-  HLSID3.adStop = { Cb: cbobj.adStopCb, fired: true };
+  HLSID3.adStop = { Cb: cbobj.adStopCb, fired: false };
   HLSID3.timer = setInterval(_handleTick, 1000);
   HLSID3.timeOffset = -1;
   HLSID3.playerStartTime = -1;
   HLSID3_reset();
+  console.log("New source attached " + HLSID3.src);
 }
 
 function HLSID3_setPlayerStartTime(startTime) {
